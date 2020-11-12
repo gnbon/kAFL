@@ -1,0 +1,251 @@
+From ec319401ef71dd66725206ebe6cc962286c7f9a5 Mon Sep 17 00:00:00 2001
+From: gnbon <borngunk7061@naver.com>
+Date: Wed, 11 Nov 2020 18:07:47 +0900
+Subject: [PATCH] Add qemu & hprintf log
+
+---
+ pt.c              |  2 +-
+ pt/debug.h        | 22 ++++++++++++++++------
+ pt/decoder.c      |  9 +++++++++
+ pt/disassembler.c | 16 ++++++++--------
+ pt/hypercall.c    | 18 +++++++++++-------
+ 5 files changed, 45 insertions(+), 22 deletions(-)
+
+diff --git a/pt.c b/pt.c
+index e3ff67ba..e85b5ea3 100644
+--- a/pt.c
++++ b/pt.c
+@@ -422,7 +422,7 @@ void pt_pre_kvm_run(CPUState *cpu){
+ 				if (cpu->pt_fd){
+ 					ret = ioctl(cpu->pt_fd, cpu->pt_cmd, cpu->pt_arg);
+ 					if (ret > 0){
+-						QEMU_PT_DEBUG(PT_PREFIX, "KVM_VMX_PT_DISABLE %d", ret);
++						// QEMU_PT_DEBUG(PT_PREFIX, "KVM_VMX_PT_DISABLE %d", ret);
+ 						pt_dump(cpu, ret);
+ 						cpu->pt_enabled = false;
+ 					}
+diff --git a/pt/debug.h b/pt/debug.h
+index aa946661..379bb8ea 100644
+--- a/pt/debug.h
++++ b/pt/debug.h
+@@ -16,6 +16,7 @@
+ #include "qemu/log.h"
+ 
+ #define QEMU_PT_PREFIX		"[QEMU-PT] "
++#define HPRINTF_PREFIX      "[HPRINTF] "
+ #define CORE_PREFIX			"Core:  "
+ #define MEM_PREFIX			"Mem:   "
+ #define RELOAD_PREFIX		"Reload:"
+@@ -23,19 +24,28 @@
+ #define INTERFACE_PREFIX	"Iface: "
+ #define REDQUEEN_PREFIX		"Redq.: "
+ #define DISASM_PREFIX		"Diasm: "
+-
++#define DECODE_PREFIX       "Decode: "
+ #define COLOR	"\033[1;35m"
+ #define ENDC	"\033[0m"
+ 
++/* debug color */
++#define DEBUG_RED          "\033[1;31m"
++#define DEBUG_GREEN        "\033[1;32m"
++#define DEBUG_YELLOW       "\033[1;33m"
++#define DEBUG_BLUE         "\033[1;34m"
++#define DEBUG_MAGENTA      "\033[1;35m"
++#define DEBUG_CYAN         "\033[1;36m"
++#define DEBUG_ENDC         "\033[0m"
++
+ /* _PRINTF is the standard logging enabled with -D */
+ /* _DEBUG is activated with -d kafl cmdline */
+ /* _ERROR is printed to stdout (or logged if logging is enabled) */
+-#define QEMU_PT_PRINTF(PREFIX, format, ...) qemu_log(QEMU_PT_PREFIX PREFIX format "\n", ##__VA_ARGS__)
+-#define QEMU_PT_ERROR(PREFIX, format, ...)  printf(QEMU_PT_PREFIX PREFIX format "\n", ##__VA_ARGS__)
++#define QEMU_PT_PRINTF(PREFIX, format, ...) fprintf(stderr, DEBUG_YELLOW QEMU_PT_PREFIX DEBUG_ENDC PREFIX format "\n", ##__VA_ARGS__)
++#define QEMU_PT_ERROR(PREFIX, format, ...)  fprintf(stderr, DEBUG_YELLOW QEMU_PT_PREFIX DEBUG_ENDC PREFIX format "\n", ##__VA_ARGS__)
+ 
+-#define PT_DEBUG_DISABLE
++//#define PT_DEBUG_DISABLE
+ #ifndef PT_DEBUG_DISABLE
+-#define QEMU_PT_DEBUG(PREFIX, format, ...)  qemu_log_mask(LOG_KAFL, QEMU_PT_PREFIX PREFIX format "\n", ##__VA_ARGS__)
++#define QEMU_PT_DEBUG(PREFIX, format, ...)  fprintf(stderr, DEBUG_YELLOW QEMU_PT_PREFIX DEBUG_ENDC PREFIX format "\n", ##__VA_ARGS__)
+ #else
+ #define QEMU_PT_DEBUG(PREFIX, format, ...)  (void)0
+-#endif
++#endif
+\ No newline at end of file
+diff --git a/pt/decoder.c b/pt/decoder.c
+index f93780f2..6f0fc81c 100644
+--- a/pt/decoder.c
++++ b/pt/decoder.c
+@@ -46,6 +46,7 @@
+ 
+ #define _GNU_SOURCE 1
+ #include "pt/decoder.h"
++#include "pt/debug.h"
+ 
+ #define LEFT(x) ((end - p) >= (x))
+ #define BIT(x) (1U << (x))
+@@ -375,6 +376,7 @@ static void tip_handler(decoder_t* self, uint8_t** p, uint8_t** end){
+ 	}
+ 
+ 	self->last_tip = get_ip_val(p, &self->last_tip_tmp);
++	QEMU_PT_DEBUG(DECODE_PREFIX, "last_tip\t0x%lx", self->last_tip);
+ 	WRITE_SAMPLE_DECODED_DETAILED("TIP    \t%lx\n", self->last_tip);
+ 	decoder_handle_tip(self->decoder_state, self->last_tip, self->decoder_state_result);
+ 	disasm(self);
+@@ -391,6 +393,7 @@ static void tip_pge_handler(decoder_t* self, uint8_t** p, uint8_t** end){
+ 	}
+ 
+ 	self->last_tip = get_ip_val(p, &self->last_tip_tmp);
++	QEMU_PT_DEBUG(DECODE_PREFIX, "last_tip\t0x%lx", self->last_tip);
+ 	WRITE_SAMPLE_DECODED_DETAILED("PGE    \t%lx\n", self->last_tip);
+ 	decoder_handle_pge(self->decoder_state, self->last_tip, self->decoder_state_result);
+ 	disasm(self);
+@@ -413,6 +416,7 @@ static void tip_pgd_handler(decoder_t* self, uint8_t** p, uint8_t** end){
+ 	}
+ 
+ 	self->last_tip = get_ip_val(p, &self->last_tip_tmp);
++	QEMU_PT_DEBUG(DECODE_PREFIX, "last_tip\t0x%lx", self->last_tip);
+ 	WRITE_SAMPLE_DECODED_DETAILED("PGD    \t%lx\n", self->last_tip);
+ 	decoder_handle_pgd(self->decoder_state, self->last_tip, self->decoder_state_result);
+ 	disasm(self);
+@@ -430,6 +434,7 @@ static void tip_pgd_handler(decoder_t* self, uint8_t** p, uint8_t** end){
+ 
+ static void tip_fup_handler(decoder_t* self, uint8_t** p, uint8_t** end){
+ 	self->last_tip = get_ip_val(p, &self->last_tip_tmp);
++	QEMU_PT_DEBUG(DECODE_PREFIX, "last_tip	\t0x%lx", self->last_tip);
+ 	self->fup_bind_pending = true;
+ #ifdef DECODER_LOG
+ 	self->log.tip_fup++;
+@@ -493,6 +498,7 @@ static inline void pip_handler(decoder_t* self, uint8_t** p){
+ 				case (PT_PKT_TIP_BYTE0 + TIP_VALUE_5):
+ 				case (PT_PKT_TIP_BYTE0 + TIP_VALUE_6):
+ 				case (PT_PKT_TIP_BYTE0 + TIP_VALUE_7):
++					QEMU_PT_DEBUG(DECODE_PREFIX, DEBUG_CYAN "TIP" DEBUG_ENDC "\t\t(" DEBUG_GREEN "%p" DEBUG_ENDC ")", p);
+ 					tip_handler(self, &p, &end);
+ 					break;
+ 				case (PT_PKT_TIP_PGE_BYTE0 + TIP_VALUE_0):
+@@ -503,6 +509,7 @@ static inline void pip_handler(decoder_t* self, uint8_t** p){
+ 				case (PT_PKT_TIP_PGE_BYTE0 + TIP_VALUE_5):
+ 				case (PT_PKT_TIP_PGE_BYTE0 + TIP_VALUE_6):
+ 				case (PT_PKT_TIP_PGE_BYTE0 + TIP_VALUE_7):
++					QEMU_PT_DEBUG(DECODE_PREFIX, DEBUG_CYAN "TIP.PGE" DEBUG_ENDC "\t(" DEBUG_GREEN "%p" DEBUG_ENDC ")", p);
+ 					tip_pge_handler(self, &p, &end);
+ 					break;
+ 				case (PT_PKT_TIP_PGD_BYTE0 + TIP_VALUE_0):
+@@ -513,6 +520,7 @@ static inline void pip_handler(decoder_t* self, uint8_t** p){
+ 				case (PT_PKT_TIP_PGD_BYTE0 + TIP_VALUE_5):
+ 				case (PT_PKT_TIP_PGD_BYTE0 + TIP_VALUE_6):
+ 				case (PT_PKT_TIP_PGD_BYTE0 + TIP_VALUE_7):
++					QEMU_PT_DEBUG(DECODE_PREFIX, DEBUG_CYAN "TIP.PGD" DEBUG_ENDC "\t(" DEBUG_GREEN "%p" DEBUG_ENDC ")", p);
+ 					tip_pgd_handler(self, &p, &end);
+ 					break;
+ 				case (PT_PKT_TIP_FUP_BYTE0 + TIP_VALUE_0):
+@@ -523,6 +531,7 @@ static inline void pip_handler(decoder_t* self, uint8_t** p){
+ 				case (PT_PKT_TIP_FUP_BYTE0 + TIP_VALUE_5):
+ 				case (PT_PKT_TIP_FUP_BYTE0 + TIP_VALUE_6):
+ 				case (PT_PKT_TIP_FUP_BYTE0 + TIP_VALUE_7):
++					QEMU_PT_DEBUG(DECODE_PREFIX, DEBUG_CYAN "TIP.FUP" DEBUG_ENDC "\t(" DEBUG_GREEN "%p" DEBUG_ENDC ")", p);
+ 					tip_fup_handler(self, &p, &end);
+ 					break;
+ 				case PT_PKT_GENERIC_BYTE0:
+diff --git a/pt/disassembler.c b/pt/disassembler.c
+index 450dc48d..72974139 100644
+--- a/pt/disassembler.c
++++ b/pt/disassembler.c
+@@ -244,7 +244,7 @@ static bool is_interessting_lea_at(disassembler_t* self, uint64_t addr){
+ 
+     if(res){
+       if(!strcmp(op2.index,"rbp") || !strcmp(op2.index,"ebp") || !strcmp(op2.index,"rip")){ 
+-        QEMU_PT_PRINTF(REDQUEEN_PREFIX, "got boring index");
++        // QEMU_PT_PRINTF(REDQUEEN_PREFIX, "got boring index");
+         res = false;
+       } //don't instrument local stack offset computations
+     }
+@@ -317,19 +317,19 @@ static cofi_type opcode_analyzer(disassembler_t* self, cs_insn *ins){
+ 			  set_rq_instruction(self->redqueen_state, ins->address);
+       }
+ 		  if(ins->id == X86_INS_LEA && is_interessting_lea_at(self, ins->address)){
+-		      QEMU_PT_PRINTF(REDQUEEN_PREFIX, "hooking lea %lx", ins->address);
++		      // QEMU_PT_PRINTF(REDQUEEN_PREFIX, "hooking lea %lx", ins->address);
+ 			    set_rq_instruction(self->redqueen_state, ins->address);
+       }
+ 		  if(ins->id == X86_INS_SUB && is_interessting_sub_at(self, ins->address)){
+-		      QEMU_PT_PRINTF(REDQUEEN_PREFIX, "hooking sub %lx", ins->address);
++		      // QEMU_PT_PRINTF(REDQUEEN_PREFIX, "hooking sub %lx", ins->address);
+ 			    set_rq_instruction(self->redqueen_state, ins->address);
+       }
+ 		  if(ins->id == X86_INS_ADD && is_interessting_add_at(self, ins->address)){
+-		      QEMU_PT_PRINTF(REDQUEEN_PREFIX, "hooking add %lx", ins->address);
++		      // QEMU_PT_PRINTF(REDQUEEN_PREFIX, "hooking add %lx", ins->address);
+ 			    set_rq_instruction(self->redqueen_state, ins->address);
+       }
+ 		  if(ins->id == X86_INS_XOR && is_interessting_xor_at(self, ins->address)){
+-		      QEMU_PT_PRINTF(REDQUEEN_PREFIX, "hooking xor %lx", ins->address);
++		      // QEMU_PT_PRINTF(REDQUEEN_PREFIX, "hooking xor %lx", ins->address);
+ 			    set_rq_instruction(self->redqueen_state, ins->address);
+       }
+       if( ins->id != X86_INS_LEA && (ins->id == X86_INS_RET || ins->id == X86_INS_POP || 
+@@ -341,7 +341,7 @@ static cofi_type opcode_analyzer(disassembler_t* self, cs_insn *ins){
+ 			  set_se_instruction(self->redqueen_state, ins->address);
+ 		  }
+       if(ins->id ==X86_INS_CALL || ins->id == X86_INS_LCALL){
+-		  QEMU_PT_DEBUG(REDQUEEN_PREFIX, "insert hook call %lx", ins->address);
++		  // QEMU_PT_DEBUG(REDQUEEN_PREFIX, "insert hook call %lx", ins->address);
+ 		  set_rq_instruction(self->redqueen_state, ins->address);
+       }
+ 	}
+@@ -414,11 +414,11 @@ static cofi_list* analyse_assembly(disassembler_t* self, uint64_t base_address){
+ 	cs_option(handle, CS_OPT_SKIPDATA, CS_OPT_ON);
+ 	insn = cs_malloc(handle);
+ 
+-	QEMU_PT_DEBUG(DISASM_PREFIX, "Analyse ASM: %lx (%zd), max_addr=%lx", address, code_size, self->max_addr);
++	// QEMU_PT_DEBUG(DISASM_PREFIX, "Analyse ASM: %lx (%zd), max_addr=%lx", address, code_size, self->max_addr);
+ 
+ 	while(cs_disasm_iter(handle, (const uint8_t**)&code, &code_size, &address, insn)) {	
+ 
+-		QEMU_PT_DEBUG(DISASM_PREFIX, "Loop: %lx:\t%s\t%s, last_nop=%d", insn->address, insn->mnemonic, insn->op_str, last_nop);
++		// QEMU_PT_DEBUG(DISASM_PREFIX, "Loop: %lx:\t%s\t%s, last_nop=%d", insn->address, insn->mnemonic, insn->op_str, last_nop);
+ 
+ 		if (insn->address > self->max_addr){
+ 			break;
+diff --git a/pt/hypercall.c b/pt/hypercall.c
+index 3e29a6af..cea8cea0 100644
+--- a/pt/hypercall.c
++++ b/pt/hypercall.c
+@@ -34,7 +34,7 @@
+ #include "pt/redqueen.h"
+ #endif
+ 
+-bool hprintf_enabled = false;
++bool hprintf_enabled = true;
+ bool notifiers_enabled = false;
+ uint32_t hprintf_counter = 0;
+ 
+@@ -421,14 +421,18 @@ void enable_reload_mode(void){
+ }
+ 
+ void hprintf(char* msg){
+-	char file_name[256];
++	// char file_name[256];
+ 	if(!(hprintf_counter >= HPRINTF_LIMIT) && hprintf_enabled){
+ 		if(hypercall_enabled){
+-			snprintf(file_name, 256, "%s.%d", HPRINTF_FILE, hprintf_counter);
+-			//printf("%s: %s\n", __func__, msg);
+-			FILE* printf_file_fd = fopen(file_name, "w");
+-			fprintf(printf_file_fd, "%s", msg);
+-			fclose(printf_file_fd);
++			/*	
++			 * snprintf(file_name, 256, "%s.%d", HPRINTF_FILE, hprintf_counter);
++			 * //printf("%s: %s\n", __func__, msg);
++			 * FILE* printf_file_fd = fopen(file_name, "w");
++			 * fprintf(printf_file_fd, "%s", msg);
++			 * fclose(printf_file_fd); 
++			 */
++
++			fprintf(stderr, DEBUG_MAGENTA HPRINTF_PREFIX DEBUG_ENDC "%s", msg);
+ 			hypercall_snd_char(KAFL_PROTO_PRINTF);
+ 		}
+ 		hprintf_counter++;
+-- 
+2.25.1
+
