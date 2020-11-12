@@ -1,0 +1,56 @@
+From b47df8c4081b32650b20e6371c521f3c78cb6ce5 Mon Sep 17 00:00:00 2001
+From: hktomato <khk04078@gmail.com>
+Date: Tue, 10 Nov 2020 20:39:59 +0900
+Subject: [PATCH] Edit Hypercall LOCK to take snapshot
+
+When it take a snapshot, QEMU should be faused.
+---
+ pt/hypercall.c | 30 +++++++++++++++---------------
+ 1 file changed, 15 insertions(+), 15 deletions(-)
+
+diff --git a/pt/hypercall.c b/pt/hypercall.c
+index a8326f68..3e29a6af 100644
+--- a/pt/hypercall.c
++++ b/pt/hypercall.c
+@@ -377,23 +377,23 @@ void handle_hypercall_kafl_kasan(struct kvm_run *run, CPUState *cpu){
+ }
+ 
+ void handle_hypercall_kafl_lock(struct kvm_run *run, CPUState *cpu){
+-	if(create_snapshot_enabled){
+-		Error *err = NULL;
+-		QEMU_PT_PRINTF(CORE_PREFIX, "Creating snapshot <kafl> ...");
+-		qemu_mutex_lock_iothread();
+-		kvm_cpu_synchronize_state(qemu_get_cpu(0));
+-		save_snapshot("kafl", &err);
+-        if (err)
+-            error_reportf_err(err, "Error: ");
+-
+-		qemu_mutex_unlock_iothread();
+-		QEMU_PT_PRINTF(CORE_PREFIX, "Done. Shutting down..");
+-		qemu_system_shutdown_request(SHUTDOWN_CAUSE_HOST_SIGNAL);
+-	}
+-	/*
++	// if(create_snapshot_enabled){
++	// 	Error *err = NULL;
++	// 	QEMU_PT_PRINTF(CORE_PREFIX, "Creating snapshot <kafl> ...");
++	// 	qemu_mutex_lock_iothread();
++	// 	kvm_cpu_synchronize_state(qemu_get_cpu(0));
++	// 	save_snapshot("kafl", &err);
++    //     if (err)
++    //         error_reportf_err(err, "Error: ");
++
++	// 	qemu_mutex_unlock_iothread();
++	// 	QEMU_PT_PRINTF(CORE_PREFIX, "Done. Shutting down..");
++	// 	qemu_system_shutdown_request(SHUTDOWN_CAUSE_HOST_SIGNAL);
++	// }
++	
+ 	printf("kAFL: VM PAUSED - CREATE SNAPSHOT NOW!\n");
+ 	vm_stop(RUN_STATE_PAUSED);
+-	*/
++	
+ }
+ 
+ void handle_hypercall_kafl_info(struct kvm_run *run, CPUState *cpu){
+-- 
+2.25.1
+
