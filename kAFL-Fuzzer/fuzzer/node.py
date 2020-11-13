@@ -185,6 +185,8 @@ class QueueNode:
         self.node_struct["score"] = val
 
     def get_score(self):
+        if "score" not in self.node_struct:
+            self.set_score(0)
         return self.node_struct["score"]
 
     def set_fav_factor(self, val, write=True):

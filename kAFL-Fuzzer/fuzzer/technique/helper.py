@@ -63,7 +63,7 @@ def AFL_choose_block_len(limit):
             max_value = HAVOC_BLK_LARGE
 
     if min_value >= limit:
-        min_value = 1;
+        min_value = 1
 
     return min_value + rand.int(MIN(max_value, limit) - min_value + 1);
 

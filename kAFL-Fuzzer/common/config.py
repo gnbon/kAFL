@@ -142,6 +142,8 @@ def add_args_fuzzer(parser):
                         type=int, required=False, default=None)
     parser.add_argument('-abort_exec', metavar='<n>', help="exit after max executions",
                         type=int, required=False, default=None)
+    parser.add_argument('-tui', required=False, help="enable TUI based monitor",
+                        action='store_true', default=False)
 
 # Qemu/Slave-specific launch options
 def add_args_qemu(parser):
@@ -151,6 +153,8 @@ def add_args_qemu(parser):
 
     xorarg.add_argument('-vm_dir', metavar='<dir>', required=False, action=FullPath,
                         type=parse_is_dir, help='path to a VM\'s overlay directory.')
+    parser.add_argument('-vm_ram', metavar='<dir>', required=False, action=FullPath,
+                        type=parse_is_dir, help='path to a VM\'s RAM snapshot directory.')
     parser.add_argument('-S', required=False, metavar='<name>', help='name of VM snapshot to save/load (default: kafl).',
                         default="kafl", type=str)
 
@@ -187,6 +191,8 @@ def add_args_qemu(parser):
     parser.add_argument('-catch_resets', required=False, help='interpret silent VM reboot as KASAN events',
                         action='store_true', default=False)
     parser.add_argument('-gdbserver', required=False, help='enable Qemu gdbserver (use via kafl_debug.py!)',
+                        action='store_true', default=False)
+    parser.add_argument('-graphic', required=False, help='graphic mode via X11 forwarding',
                         action='store_true', default=False)
 
 

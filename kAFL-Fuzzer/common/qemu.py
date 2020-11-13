@@ -25,8 +25,9 @@ import common.qemu_protocol as qemu_protocol
 from common.debug import log_qemu
 from common.execution_result import ExecutionResult
 from fuzzer.technique.redqueen.workdir import RedqueenWorkdir
-from common.util import read_binary_file, atomic_write, print_fail, print_warning, strdump
+from common.util import read_binary_file, atomic_write, print_fail, strdump
 
+from debug.log import debug_error
 
 def to_string_32(value):
     return [(value >> 24) & 0xff,
@@ -51,6 +52,7 @@ class qemu:
         self.patches_enabled = False
         self.needs_execution_for_patches = False
         self.debug_counter = 0
+        self.verbose = config.argument_values['v']
 
         self.agent_size = config.config_values['AGENT_MAX_SIZE']
         self.bitmap_size = config.config_values['BITMAP_SHM_SIZE']
@@ -133,6 +135,9 @@ class qemu:
 
         # Lauch either as VM snapshot, direct kernel/initrd boot, or -bios boot
         if self.config.argument_values['vm_dir']:
+            assert(self.config.argument_values['vm_ram'])
+            # Edited argument vm_ram's parsing target from file to directory, for parallel fuzzing
+            self.cmd += " -hdb " + self.config.argument_values['vm_ram'] + "/ram_" + self.qemu_id + ".qcow2"
             self.cmd += " -hda " + self.config.argument_values['vm_dir'] + "/overlay_" + self.qemu_id + ".qcow2"
             self.cmd += " -loadvm " + self.config.argument_values["S"]
         elif self.config.argument_values['kernel']:
@@ -152,10 +157,27 @@ class qemu:
         else:
             self.cmd += " -machine q35 "
 
+        if self.config.argument_values["graphic"]:
+            self.cmd = self.cmd.replace("-nographic", "")
+
+        self.kafl_shm_f = None
+        self.kafl_shm   = None
+        self.fs_shm_f   = None
+        self.fs_shm     = None
+
+        self.payload_shm_f   = None
+        self.payload_shm     = None
+
+        self.bitmap_shm_f   = None
+        self.bitmap_shm     = None
 
         self.crashed = False
         self.timeout = False
         self.kasan = False
+        self.shm_problem = False
+        self.initial_mem_usage = 0
+
+        self.stat_fd = None
 
         self.virgin_bitmap = bytes(self.bitmap_size)
 
@@ -169,20 +191,22 @@ class qemu:
             c += 1
 
     def __debug_hprintf(self):
-        try:
-            if self.debug_counter < 512:
-                data = ""
-                for line in open("/tmp/kAFL_printf.txt." + str(self.debug_counter)):
-                    data += line
-                self.debug_counter += 1
-                if data.endswith('\n'):
-                    data = data[:-1]
-                if self.hprintf_print_mode:
-                    print("[HPRINTF]\t" + '\033[0;33m' + data + '\033[0m')
-                else:
-                    print('\033[0;33m' + data + '\033[0m')
-        except Exception as e:
-            print("__debug_hprintf: " + str(e))
+        """ 
+            try:
+                if self.debug_counter < 512:
+                    data = ""
+                    for line in open("/tmp/kAFL_printf.txt." + str(self.debug_counter)):
+                        data += line
+                    self.debug_counter += 1
+                    if data.endswith('\n'):
+                        data = data[:-1]
+                    if self.hprintf_print_mode:
+                        print("[HPRINTF]\t" + '\033[0;33m' + data + '\033[0m')
+                    else:
+                        print('\033[0;33m' + data + '\033[0m')
+            except Exception as e:
+                print("__debug_hprintf: " + str(e)) 
+        """
 
     def send_enable_redqueen(self):
         self.__debug_send(qemu_protocol.ENABLE_RQI_MODE)
@@ -396,18 +420,15 @@ class qemu:
         header = "\n=================<Qemu %s Console Output>==================\n" % self.qemu_id
         footer = "====================</Console Output>======================\n"
         log_qemu(header + output + footer, self.qemu_id)
-
-        if os.path.isfile(self.qemu_serial_log):
-            header = "\n=================<Qemu %s Serial Output>==================\n" % self.qemu_id
-            footer = "====================</Serial Output>======================\n"
-            serial_out = strdump(read_binary_file(self.qemu_serial_log), verbatim=True)
-            log_qemu(header + serial_out + footer, self.qemu_id)
+        header = "\n=================<Qemu %s Serial Output>==================\n" % self.qemu_id
+        footer = "====================</Serial Output>======================\n"
+        serial_out = strdump(read_binary_file(self.qemu_serial_log), verbatim=True)
+        log_qemu(header + serial_out + footer, self.qemu_id)
 
 
         try:
-            # TODO: exec_res keeps from_buffer() reference to kafl_shm
             self.kafl_shm.close()
-        except BufferError as e:
+        except:
             pass
 
         try:
@@ -424,6 +445,13 @@ class qemu:
             os.close(self.fs_shm_f)
         except:
             pass
+
+        try:
+            if self.stat_fd:
+                self.stat_fd.close()
+        except:
+            pass
+
 
         return self.process.returncode
 
@@ -451,21 +479,35 @@ class qemu:
         # Launch Qemu. stderr to stdout, stdout is logged on VM exit
         # os.setpgrp() prevents signals from being propagated to Qemu, instead allowing an
         # organized shutdown via async_exit()
-        self.process = subprocess.Popen(self.cmd,
-                preexec_fn=os.setpgrp,
-                stdin=subprocess.PIPE,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT)
+        if self.verbose:
+            from common.debug import output_file
+            self.process = subprocess.Popen(self.cmd,
+                    preexec_fn=os.setpgrp,
+                    stdin=subprocess.PIPE,
+                    stdout=output_file,
+                    stderr=output_file)
+        else:
+            self.process = subprocess.Popen(self.cmd,
+                    preexec_fn=os.setpgrp,
+                    stdin=subprocess.PIPE,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT)
 
         try:
+            self.stat_fd = open("/proc/" + str(self.process.pid) + "/stat")
             self.__qemu_connect()
             self.__qemu_handshake()
-        except (OSError, BrokenPipeError) as e:
+        except:
             if not self.exiting:
-                print_fail("Failed to launch Qemu, please see logs. Error: " + str(e))
-                log_qemu("Fatal error: Failed to launch Qemu: " + str(e), self.qemu_id)
+                debug_error("Failed to launch Qemu, please see logs.")
+                log_qemu("Fatal error: Failed to launch Qemu.", self.qemu_id)
                 self.shutdown()
             return False
+
+        self.initial_mem_usage = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+        self.kafl_shm.seek(0x0)
+        self.kafl_shm.write(self.virgin_bitmap)
+        self.kafl_shm.flush()
 
         return True
 
@@ -509,33 +551,22 @@ class qemu:
 
         open(self.tracedump_filename, "wb").close()
 
-        with open(self.binary_filename, 'bw') as f:
-            os.ftruncate(f.fileno(), self.agent_size)
-
         os.ftruncate(self.kafl_shm_f, self.bitmap_size)
-        os.ftruncate(self.fs_shm_f, self.payload_size)
+        os.ftruncate(self.fs_shm_f, (128 << 10))
 
-        self.kafl_shm = mmap.mmap(self.kafl_shm_f, 0)
-        self.c_bitmap = (ctypes.c_uint8 * self.bitmap_size).from_buffer(self.kafl_shm)
-        self.fs_shm = mmap.mmap(self.fs_shm_f, 0)
+        self.kafl_shm = mmap.mmap(self.kafl_shm_f, self.bitmap_size, mmap.MAP_SHARED, mmap.PROT_WRITE | mmap.PROT_READ) # shared memory to write bitmap
+        self.c_bitmap = (ctypes.c_uint8 * self.bitmap_size).from_buffer(self.kafl_shm)  # ctypes instance to share and manage bitmap
+        self.fs_shm = mmap.mmap(self.fs_shm_f, (128 << 10), mmap.MAP_SHARED, mmap.PROT_WRITE | mmap.PROT_READ)  # shared memory to write payload
 
         return True
 
-    # Fully stop/start Qemu instance to store logs + possibly recover
+    # Restart Qemu after crash/timeout, unless the target runs its own forkserver
     def restart(self):
-
-        self.shutdown()
-        # TODO: Need to wait here or else the next instance dies in set_payload()
-        # Perhaps Qemu should do proper munmap()/close() on exit?
-        time.sleep(0.1)
-        return self.start()
-
-    # Reset Qemu after crash/timeout - can skip if target has own forkserver
-    def reload(self):
         if self.config.argument_values['forkserver']:
             return True
-        else:
-            return self.restart()
+
+        self.shutdown()
+        return self.start()
 
     # Reload is not part of released Redqueen backend, it seems we can simply disable it here..
     def soft_reload(self):
@@ -557,12 +588,16 @@ class qemu:
     # TODO: can directly return result for handling by caller?
     # TODO: document protocol and meaning/effect of each message
     def check_recv(self, timeout_detection=True):
-        if timeout_detection and not self.config.argument_values['forkserver']:
-            ready = select.select([self.control], [], [], 0.25)
+        if timeout_detection:
+            #debugging_code
+            #ready = select.select([self.control], [], [], 0.25)
+            ready = select.select([self.control], [], [], 5)
             if not ready[0]:
                 return 2
         else:
-            ready = select.select([self.control], [], [], 5.0)
+            #debugging_code
+            #ready = select.select([self.control], [], [], 5.0)
+            ready = select.select([self.control], [], [])
             if not ready[0]:
                 return 2
 

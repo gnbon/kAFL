@@ -24,25 +24,26 @@ from common.util import prepare_working_dir, print_fail, print_note, print_warni
 from fuzzer.process.master import MasterProcess
 from fuzzer.process.slave import slave_loader
 
+from debug.log import debug_warn, debug_kafl
 
 def qemu_sweep():
     pids = pgrep.pgrep("qemu")
 
     if (len(pids) > 0):
-        print_warning("Detected potential qemu zombies, please kill -9: " + repr(pids))
+        debug_warn("Detected potential qemu zombies, please kill -9: " + repr(pids))
 
 
 def graceful_exit(slaves):
     for s in slaves:
         s.terminate()
 
-    print("Waiting for Slave instances to shutdown...")
+    debug_kafl("Waiting for Slave instances to shutdown...")
     time.sleep(1)
 
     while len(slaves) > 0:
         for s in slaves:
             if s and s.exitcode is None:
-                print("Still waiting on %s (pid=%d)..  [hit Ctrl-c to abort..]" % (s.name,s.pid))
+                debug_warn("Still waiting on %s (pid=%d)..  [hit Ctrl-c to abort..]" % (s.name,s.pid))
                 s.join(timeout=1)
             else:
                 slaves.remove(s)

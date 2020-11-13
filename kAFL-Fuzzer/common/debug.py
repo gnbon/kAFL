@@ -5,28 +5,24 @@
 
 import collections
 import sys
-import time
-from datetime import timedelta
 from common.util import strdump
 
 logging_is_enabled = False
 debug_file_path = None
 output_file = None
-init_time = 0.0
 
 def __init_logger():
-    global output_file, init_time, debug_file_path
-    init_time = time.time()
+    global output_file, debug_file_path
     output_file = open(debug_file_path, 'w')
 
 
 def logger(msg):
-    global logging_is_enabled, output_file, init_time, shared_list
+    global logging_is_enabled, output_file, shared_list
 
     if logging_is_enabled:
         if not output_file:
             __init_logger()
-        output_file.write("[" + str(timedelta(seconds=time.time() - init_time)) + "] " + msg + "\n")
+        output_file.write(msg + "\n")
         output_file.flush()
 
 

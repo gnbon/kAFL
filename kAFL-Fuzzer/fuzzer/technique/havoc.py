@@ -12,6 +12,8 @@ import glob
 from common.config import FuzzerConfiguration
 from fuzzer.technique.havoc_handler import *
 
+SPLICE_ROUND = 2
+HAVOC_MAX_LEN = 0xff
 
 def load_dict(file_name):
     f = open(file_name)
@@ -47,21 +49,49 @@ def havoc_range(perf_score):
     return max_iterations
 
 
-def mutate_seq_havoc_array(data, func, max_iterations, resize=False):
+def mutate_seq_havoc_array(data, func, max_iterations, resize=False, splice=None):    
     if resize:
         data = data + data
     else:
         data = data
 
-    for i in range(max_iterations):
-        stacking = rand.int(AFL_HAVOC_STACK_POW2)
+    # handling havoc
+    if not splice:
+        for i in range(max_iterations):
+            stacking = rand.int(AFL_HAVOC_STACK_POW2)
 
-        for j in range(1 << (1 + stacking)):
-            handler = rand.select(havoc_handler)
-            data = handler(data)
-            if len(data) >= KAFL_MAX_FILE:
-                data = data[:KAFL_MAX_FILE]
-        func(data)
+            for j in range(1 << (1 + stacking)):
+                handler = rand.select(havoc_handler)
+                data = handler(data)
+                if len(data) >= KAFL_MAX_FILE:
+                    data = data[:KAFL_MAX_FILE]
+
+            if len(data) >= HAVOC_MAX_LEN:
+                data = data[:HAVOC_MAX_LEN]
+            
+            func(data)
+    
+    # handling splice
+    else:
+        state = 'splice'
+        
+        for i in range(max_iterations):
+            newdata = ''
+            for j in range(SPLICE_ROUND):
+                handler = rand.select(havoc_handler)
+                while len(newdata) <= (len(data) // 2):
+                    newdata = handler(data)
+                
+                # test - havoc it again
+                newdata = handler(newdata)
+
+                if len(newdata) >= KAFL_MAX_FILE:
+                    newdata = newdata[:KAFL_MAX_FILE]
+
+            if len(newdata) >= HAVOC_MAX_LEN:
+                newdata = newdata[:HAVOC_MAX_LEN]
+            
+            func(newdata)
 
 
 def mutate_seq_splice_array(data, func, max_iterations, resize=False):
@@ -75,4 +105,5 @@ def mutate_seq_splice_array(data, func, max_iterations, resize=False):
         mutate_seq_havoc_array(spliced_data,
                                func,
                                int(2*max_iterations/splice_rounds),
-                               resize=resize)
+                               resize=resize,
+                               splice=True)

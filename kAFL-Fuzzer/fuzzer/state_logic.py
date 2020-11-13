@@ -26,6 +26,7 @@ from fuzzer.technique.redqueen.workdir import RedqueenWorkdir
 from fuzzer.technique.trim import perform_trim, perform_center_trim
 from fuzzer.technique.helper import rand
 
+from debug.log import debug
 
 class FuzzingStateLogic:
     HAVOC_MULTIPLIER = 2
@@ -86,6 +87,9 @@ class FuzzingStateLogic:
 
     def process_node(self, payload, metadata):
         self.init_stage_info(metadata)
+
+        debug("\033[1;36mNode " + str(metadata['id']) + "\033[0m entered \033[1;34m" + metadata["state"]["name"] + " \033[0mstage!", newline=True)
+        time.sleep(0.5)
 
         if metadata["state"]["name"] == "import":
             self.handle_import(payload, metadata)
@@ -172,7 +176,7 @@ class FuzzingStateLogic:
         # Inform user if seed yields no new coverage. This may happen if -ip0 is
         # wrong or the harness is buggy.
         if not is_new:
-            print("Imported payload produced no new coverage, skipping..")
+            # print("Imported payload produced no new coverage, skipping..")
             log_slave("`Imported payload produced no new coverage, skipping..", self.slave.slave_id)
 
 
@@ -199,10 +203,12 @@ class FuzzingStateLogic:
 
         center_trim = False
 
-        new_payload = perform_trim(payload, metadata, self.execute)
+        new_payload = perform_trim(payload, metadata, self.execute,
+                                   self.slave.execution_exited_abnormally)
 
         if center_trim:
-            new_payload = perform_center_trim(new_payload, metadata, self.execute, trimming_bytes=2)
+            new_payload = perform_center_trim(new_payload, metadata, self.execute,
+                                              self.slave.execution_exited_abnormally, trimming_bytes=2)
         self.initial_time += time.time() - time_initial_start
         if new_payload == payload:
             return None
@@ -320,7 +326,7 @@ class FuzzingStateLogic:
             self.stage_update_label(label)
 
         parent_info = self.get_parent_info(extra_info)
-        bitmap, is_new = self.slave.execute(payload, parent_info)
+        bitmap, is_new = self.slave.execute(payload, parent_info, label=self.stage_info["method"])
         if is_new:
             self.stage_info_findings += 1
         return bitmap, is_new

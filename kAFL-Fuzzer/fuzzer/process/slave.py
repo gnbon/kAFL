@@ -30,6 +30,8 @@ from fuzzer.state_logic import FuzzingStateLogic
 from fuzzer.statistics import SlaveStatistics
 from fuzzer.technique.helper import rand
 
+from kafl_fuzz import PAYQ
+from debug.log import debug
 
 def slave_loader(slave_id):
 
@@ -43,10 +45,10 @@ def slave_loader(slave_id):
     # sys.stdout = open("slave_%d.out"%slave_id, "w")
     config = FuzzerConfiguration()
 
-    if config.argument_values["cpu_affinity"]:
-        psutil.Process().cpu_affinity([config.argument_values["cpu_affinity"]])
-    else:
-        psutil.Process().cpu_affinity([slave_id])
+    #if config.argument_values["cpu_affinity"]:
+    #    psutil.Process().cpu_affinity([config.argument_values["cpu_affinity"]])
+    #else:
+    #    psutil.Process().cpu_affinity([slave_id])
 
     connection = ClientConnection(slave_id, config)
 
@@ -138,6 +140,17 @@ class SlaveProcess:
                 self.handle_busy()
             else:
                 raise ValueError("Unknown message type {}".format(msg))
+
+    def validate(self, data, old_array):
+        self.q.set_payload(data)
+        self.statistics.event_exec()
+        new_bitmap = self.q.send_payload().apply_lut()
+        new_array = new_bitmap.copy_to_array()
+        if new_array == old_array:
+            return True, new_bitmap
+        else:
+            log_slave("Validation failed, ignoring this input", self.slave_id)
+            return False, None
 
     def quick_validate(self, data, old_res, quiet=False):
         # Validate in persistent mode. Faster but problematic for very funky targets
@@ -250,37 +263,52 @@ class SlaveProcess:
         return self.__execute(data, retry=retry+1)
 
 
-    def execute(self, data, info):
+    def execute(self, data, info, state=None, label=None):
         self.statistics.event_exec()
 
-        exec_res = self.__execute(data)
+        exec_res = self.__execute(data)     # ExecutionResult instance
 
         is_new_input = self.bitmap_storage.should_send_to_master(exec_res)
-        crash = exec_res.is_crash()
-        stable = False;
+        crash, timeout, kasan = self.execution_exited_abnormally()
+
+        # show mutated payloads
+        payload = data.decode('iso-8859-9')
+        payload_readable = ''
+        for i in range(len(payload)):
+            if ord(payload[i]) <= 0x20 or 0x7f <= ord(payload[i]):
+                payload_readable += '.'
+            else:
+                payload_readable += payload[i]
+        
+        debug("\033[1;34m[{}]\033[0m {}\t(len={})".format(label, payload_readable, len(payload_readable)))
+        if self.config.argument_values['tui']:
+            PAYQ.put(payload_readable)
 
         # store crashes and any validated new behavior
         # do not validate timeouts and crashes at this point as they tend to be nondeterministic
         if is_new_input:
             if not crash:
                 assert exec_res.is_lut_applied()
-                if self.config.argument_values["funky"]:
-                    stable = self.funky_validate(data, exec_res)
-                else:
-                    stable = self.quick_validate(data, exec_res)
-
+                bitmap_array = exec_res.copy_to_array()
+                stable, exec_res = self.validate(data, bitmap_array)
                 if not stable:
                     # TODO: auto-throttle persistent runs based on funky rate?
                     self.statistics.event_funky()
             if crash or stable:
+                if crash:
+                    debug("\033[1;31m[crash]\033[0m Crash detected!")
+                    time.sleep(0.5)
                 self.__send_to_master(data, exec_res, info)
         else:
             if crash:
                 log_slave("Crashing input found (%s), but not new (discarding)" % (exec_res.exit_reason), self.slave_id)
 
         # restart Qemu on crash
-        if crash:
+        if crash or timeout:
             self.statistics.event_reload()
-            self.q.reload()
+            self.q.restart()
 
         return exec_res, is_new_input
+
+    def execution_exited_abnormally(self):
+        return self.q.crashed, self.q.timeout, self.q.kasan

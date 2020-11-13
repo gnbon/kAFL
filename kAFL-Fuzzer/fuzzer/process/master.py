@@ -24,6 +24,7 @@ from fuzzer.technique.redqueen.cmp import redqueen_global_config
 from fuzzer.bitmap import BitmapStorage
 from fuzzer.node import QueueNode
 
+from debug.log import debug_info
 
 class MasterProcess:
 
@@ -56,7 +57,7 @@ class MasterProcess:
         imports = glob.glob(self.config.argument_values['work_dir'] + "/imports/*")
         if imports:
             path = imports.pop()
-            print("Importing payload from %s" % path)
+            debug_info("Importing payload from %s" % path)
             seed = read_binary_file(path)
             os.remove(path)
             return self.comm.send_import(conn, {"type": "import", "payload": seed})

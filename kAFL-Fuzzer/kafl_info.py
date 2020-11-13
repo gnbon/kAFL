@@ -20,6 +20,8 @@ import common.color
 from common.self_check import self_check
 from common.config import InfoConfiguration
 
+from debug.log import debug_info
+
 KAFL_ROOT = os.path.dirname(os.path.realpath(__file__)) + "/"
 KAFL_BANNER = KAFL_ROOT + "banner.txt"
 KAFL_CONFIG = KAFL_ROOT + "kafl.ini"
@@ -30,8 +32,7 @@ def main():
         for line in f:
             print(line.replace("\n", ""))
 
-    print("<< " + common.color.BOLD + common.color.OKGREEN +
-            sys.argv[0] + ": Agent Info Dumper " + common.color.ENDC + ">>\n")
+    debug_info("Guest address information - apply one to test!\n")
 
     if not self_check(KAFL_ROOT):
         return 1
