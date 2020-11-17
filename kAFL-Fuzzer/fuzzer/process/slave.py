@@ -289,8 +289,10 @@ class SlaveProcess:
         if is_new_input:
             if not crash:
                 assert exec_res.is_lut_applied()
-                bitmap_array = exec_res.copy_to_array()
-                stable, exec_res = self.validate(data, bitmap_array)
+                if self.config.argument_values["funky"]:
+                    stable = self.funky_validate(data, exec_res)
+                else:
+                    stable = self.quick_validate(data, exec_res)
                 if not stable:
                     # TODO: auto-throttle persistent runs based on funky rate?
                     self.statistics.event_funky()
