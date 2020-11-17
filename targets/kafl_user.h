@@ -56,7 +56,8 @@
 /* 19 is already used for exit reason KVM_EXIT_KAFL_TOPA_MAIN_FULL */
 #define HYPERCALL_KAFL_USER_ABORT			20
 #define HYPERCALL_KAFL_TIMEOUT				21
-
+/* Reload */
+#define HYPERCALL_KAFL_RELOAD_COVERED		23
 
 #define PAYLOAD_SIZE						(128 << 10)				/* up to 128KB payloads */
 #define PROGRAM_SIZE						(128 << 20)				/* kAFL supports 128MB programm data */
@@ -112,6 +113,21 @@ static void kAFL_hypercall(uint64_t rbx, uint64_t rcx){
 				: 
 				: "r" (rcx), "r" (rbx), "r" (rax) 
 				: "rax", "rcx", "rbx"
+				);
+# endif
+}
+
+static void kAFL_hypercallEx(uint64_t rbx, uint64_t rcx, uint64_t rdx){
+# ifndef __NOKAFL
+	uint64_t rax = HYPERCALL_KAFL_RAX_ID;
+    asm volatile("movq %0, %%rdx;"
+				 "movq %1, %%rcx;"
+				 "movq %2, %%rbx;"  
+				 "movq %3, %%rax;"
+				 "vmcall" 
+				: 
+				: "r" (rdx), "r" (rcx), "r" (rbx), "r" (rax) 
+				: "rax", "rcx", "rbx", "rdx"
 				);
 # endif
 }

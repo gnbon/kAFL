@@ -1,0 +1,100 @@
+From bf708385823c1d2322ea2acded617d4ceb76188f Mon Sep 17 00:00:00 2001
+From: hktomato <khk04078@gmail.com>
+Date: Mon, 16 Nov 2020 19:06:54 +0900
+Subject: [PATCH] Add reload_covered hypercall
+
+---
+ accel/kvm/kvm-all.c       |  6 ++++++
+ linux-headers/linux/kvm.h |  3 +++
+ pt/hypercall.c            | 30 ++++++++++++++++++++++++++++++
+ pt/hypercall.h            |  2 ++
+ 4 files changed, 41 insertions(+)
+
+diff --git a/accel/kvm/kvm-all.c b/accel/kvm/kvm-all.c
+index 0672032e..e643dffd 100644
+--- a/accel/kvm/kvm-all.c
++++ b/accel/kvm/kvm-all.c
+@@ -2525,6 +2525,12 @@ int kvm_cpu_exec(CPUState *cpu)
+             handle_hypercall_kafl_user_abort(run, cpu);
+             ret = 0;
+             break;
++        /* Driver reload_covered */
++        case KVM_EXIT_KAFL_RELOAD_COVERED:
++            handle_hypercall_kafl_reload_covered(run, cpu);
++            ret = 0;
++            break;
++
+ #ifdef CONFIG_REDQUEEN
+         case KVM_EXIT_DEBUG:
+             kvm_arch_get_registers(cpu);
+diff --git a/linux-headers/linux/kvm.h b/linux-headers/linux/kvm.h
+index 8de7be9c..69aa5031 100644
+--- a/linux-headers/linux/kvm.h
++++ b/linux-headers/linux/kvm.h
+@@ -268,6 +268,9 @@ struct kvm_hyperv_exit {
+ #define KVM_EXIT_KAFL_TIMEOUT			121
+ 
+ 
++/* New ip0 base address after driver reload */
++#define KVM_EXIT_KAFL_RELOAD_COVERED		123
++
+ /* For KVM_EXIT_INTERNAL_ERROR */
+ /* Emulate instruction failed. */
+ #define KVM_INTERNAL_ERROR_EMULATION	1
+diff --git a/pt/hypercall.c b/pt/hypercall.c
+index 779ce863..bce43366 100644
+--- a/pt/hypercall.c
++++ b/pt/hypercall.c
+@@ -505,6 +505,36 @@ void handle_hypercall_kafl_user_abort(struct kvm_run *run, CPUState *cpu){
+ 	qemu_system_shutdown_request(SHUTDOWN_CAUSE_HOST_SIGNAL);
+ }
+ 
++uint8_t* driver_snapshot;
++uint64_t driver_imagebase;
++uint64_t driver_imagesize;
++
++void handle_hypercall_kafl_reload_covered(struct kvm_run *run, CPUState *cpu){
++	if(hypercall_enabled){
++		uint8_t filter_id = 0;	//TODO - support multiple filter. 
++		uint64_t start = run->hypercall.args[0];
++		uint64_t end = run->hypercall.args[1];
++		QEMU_PT_DEBUG(PT_PREFIX, "start: %lx, end: %lx\n", start, end);
++
++		if (start && end) {
++			if (driver_snapshot)
++				free(driver_snapshot);
++			driver_snapshot = malloc(end-start+1); // TODO memory leak?
++			driver_imagebase = start;
++			driver_imagesize = end-start;
++
++			read_virtual_memory(driver_imagebase, driver_snapshot, driver_imagesize, cpu);
++#ifdef CONFIG_REDQUEEN
++			pt_enable_ip_filtering(cpu, filter_id, start, end, true, false);
++#else
++			pt_enable_ip_filtering(cpu, filter_id, start, end, false);
++#endif
++			return;
++		}
++		write_virtual_memory(driver_imagebase, driver_snapshot, driver_imagesize, cpu);
++	}
++}
++
+ #ifdef CONFIG_REDQUEEN
+ bool handle_hypercall_kafl_hook(struct kvm_run *run, CPUState *cpu){
+ 	X86CPU *cpux86 = X86_CPU(cpu);
+diff --git a/pt/hypercall.h b/pt/hypercall.h
+index e452bd76..b2f49844 100644
+--- a/pt/hypercall.h
++++ b/pt/hypercall.h
+@@ -120,6 +120,8 @@ void handle_hypercall_kafl_user_range_advise(struct kvm_run *run, CPUState *cpu)
+ void handle_hypercall_kafl_user_submit_mode(struct kvm_run *run, CPUState *cpu);
+ void handle_hypercall_kafl_user_abort(struct kvm_run *run, CPUState *cpu);
+ 
++void handle_hypercall_kafl_reload_covered(struct kvm_run *run, CPUState *cpu);
++
+ void hprintf(char* msg);
+ void enable_hprintf(void);
+ void enable_notifies(void);
+-- 
+2.25.1
+

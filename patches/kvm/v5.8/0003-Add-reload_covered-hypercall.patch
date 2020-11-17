@@ -1,0 +1,43 @@
+From ccb92047cbaf056f51e12e679319e06cef55ffaa Mon Sep 17 00:00:00 2001
+From: hktomato <khk04078@gmail.com>
+Date: Mon, 16 Nov 2020 20:49:58 +0900
+Subject: [PATCH] Add reload_covered hypercall
+
+---
+ arch/x86/kvm/x86.c       | 5 +++++
+ include/uapi/linux/kvm.h | 3 ++-
+ 2 files changed, 7 insertions(+), 1 deletion(-)
+
+diff --git a/arch/x86/kvm/x86.c b/arch/x86/kvm/x86.c
+index b05187674..d03f33017 100644
+--- a/arch/x86/kvm/x86.c
++++ b/arch/x86/kvm/x86.c
+@@ -7774,6 +7774,11 @@ int kvm_emulate_hypercall(struct kvm_vcpu *vcpu)
+ 			case (KVM_EXIT_KAFL_USER_ABORT-KAFL_EXIT_OFFSET):
+ 				vcpu->run->exit_reason = KVM_EXIT_KAFL_USER_ABORT;
+ 				break;
++			case (KVM_EXIT_KAFL_RELOAD_COVERED - KAFL_EXIT_OFFSET):
++				vcpu->run->exit_reason = KVM_EXIT_KAFL_RELOAD_COVERED;
++				vcpu->run->hypercall.args[0] = a1;
++				vcpu->run->hypercall.args[1] = a2;
++				break;
+ 			default:
+ 				r = -KVM_EPERM;
+ 				break;
+diff --git a/include/uapi/linux/kvm.h b/include/uapi/linux/kvm.h
+index 9181c50c0..b7a55b829 100644
+--- a/include/uapi/linux/kvm.h
++++ b/include/uapi/linux/kvm.h
+@@ -247,7 +247,8 @@ struct kvm_hyperv_exit {
+ #define KVM_EXIT_KAFL_TOPA_MAIN_FULL		119
+ #define KVM_EXIT_KAFL_USER_ABORT			120
+ #define KVM_EXIT_KAFL_TIMEOUT				121
+-
++//RELOAD hypercall
++#define KVM_EXIT_KAFL_RELOAD_COVERED		123
+ 
+ #define KVM_EXIT_UNKNOWN          0
+ #define KVM_EXIT_EXCEPTION        1
+-- 
+2.25.1
+
