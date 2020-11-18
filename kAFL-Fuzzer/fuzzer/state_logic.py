@@ -27,6 +27,8 @@ from fuzzer.technique.trim import perform_trim, perform_center_trim
 from fuzzer.technique.helper import rand
 
 from debug.log import debug
+from common.util import atomic_write
+from fuzzer.interface_filter import InterfaceRecoveryFilter
 
 class FuzzingStateLogic:
     HAVOC_MULTIPLIER = 2
@@ -48,6 +50,12 @@ class FuzzingStateLogic:
         self.stage_info_findings = 0
         self.attention_secs_start = None
         self.attention_execs_start = None
+
+        self.saving_index = 0
+        if config.argument_values['wdm']:
+            self.filter = InterfaceRecoveryFilter(config)
+        else:
+            self.filter = None
 
     def create_limiter_map(self, payload):
         limiter_map = bytearray([1 for _ in range(len(payload))])
@@ -318,8 +326,19 @@ class FuzzingStateLogic:
         parent_info = self.get_parent_info(extra_info)
         return self.slave.validate_bytes(payload, metadata, parent_info)
 
+    def save_payload(self, payload):
+        filename = self.config.argument_values['work_dir'] + "/inputs/payload_%08d" % (self.saving_index)
+        atomic_write(filename, payload)
+        self.saving_index += 1
 
     def execute(self, payload, label=None, extra_info=None):
+        
+        if self.filter != None:
+            filtering_res = self.filter.filter_payload(payload)
+            if filtering_res != True:
+                return None, None
+        
+        self.save_payload(payload)
 
         self.stage_info_execs += 1
         if label and label != self.stage_info["method"]:

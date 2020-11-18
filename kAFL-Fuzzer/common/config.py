@@ -142,6 +142,8 @@ def add_args_fuzzer(parser):
                         type=int, required=False, default=None)
     parser.add_argument('-abort_exec', metavar='<n>', help="exit after max executions",
                         type=int, required=False, default=None)
+    parser.add_argument('-wdm', metavar='<file>', type=parse_is_file, required=False,
+                        help='enable wdm based interface recovery filter', default=False)
     parser.add_argument('-tui', required=False, help="enable TUI based monitor",
                         action='store_true', default=False)
 
