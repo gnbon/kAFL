@@ -10,6 +10,8 @@
 #include <psapi.h>
 #include <winternl.h>
 
+#define ARRAY_SIZE	        1024
+
 typedef struct _RTL_PROCESS_MODULE_INFORMATION
 {
 	HANDLE Section;
@@ -32,7 +34,6 @@ typedef struct _RTL_PROCESS_MODULES
 
 LPVOID startAddress = NULL;	// base address of driver
 LPVOID endAddress = NULL;	// end address of driver
-LPCSTR DRIVERNAME = "medcored.sys";
 
 int kAFL_reload(PTSTR svcName) {
 	LPVOID drivers[ARRAY_SIZE];
