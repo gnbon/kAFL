@@ -7,8 +7,9 @@
 Main logic used by Slaves to push nodes through various fuzzing stages/mutators.
 """
 
-
+import os
 import time
+import shutil
 from array import array
 
 import fuzzer.technique.arithmetic as arithmetic
@@ -25,6 +26,7 @@ from fuzzer.technique.redqueen.mod import RedqueenInfoGatherer
 from fuzzer.technique.redqueen.workdir import RedqueenWorkdir
 from fuzzer.technique.trim import perform_trim, perform_center_trim
 from fuzzer.technique.helper import rand
+from common.util import atomic_write
 
 from debug.log import debug
 
@@ -34,6 +36,10 @@ class FuzzingStateLogic:
     COLORIZATION_COUNT = 1
     COLORIZATION_STEPS = 1500
     COLORIZATION_TIMEOUT = 5
+    i = 0
+    crash_num = 0
+    inputs_reset = False
+    save_crash = False
 
     def __init__(self, slave, config):
         self.slave = slave
@@ -171,6 +177,10 @@ class FuzzingStateLogic:
         retries = 4
         for _ in range(retries):
             _, is_new = self.execute(payload, label="import")
+            _, is_new = self.execute(payload, label="import")
+            _, is_new = self.execute(payload, label="import")
+            _, is_new = self.execute(payload, label="import")
+            
             if is_new: break
 
         # Inform user if seed yields no new coverage. This may happen if -ip0 is
@@ -320,6 +330,42 @@ class FuzzingStateLogic:
 
 
     def execute(self, payload, label=None, extra_info=None):
+
+        file_path = "/home/oncodetest1/kAFL/out/inputs"
+        
+        if self.save_crash == True:
+            print("OK, lets make crash directory")
+            
+            os.makedirs("/home/oncodetest1/kAFL/out/crash_input/crash_inputs_%d" %(self.crash_num))
+            print("Please wait.. preparing for saving crash...")
+            time.sleep(5)
+            file_dst_path = "/home/oncodetest1/kAFL/out/crash_input/crash_inputs_%d" %(self.crash_num)
+            file_list = os.listdir(file_path)
+            mov_files=[]
+
+            print("Lets saving crash!!!")
+
+            for files in file_list:
+                mov_files.append(files)
+            for movfi in mov_files:
+                shutil.move(file_path+'/'+movfi, file_dst_path+'/'+movfi)
+                print("move file : "+ files)
+                
+            self.crash_num += 1
+            self.save_crash = False
+
+            print("Crash_num", self.crash_num)
+        
+        if self.inputs_reset == True:
+            if os.path.exists(file_path):
+                for file in os.scandir(file_path):
+                    os.remove(file.path)
+            self.i = 0
+            self.inputs_reset = False
+
+        filename = file_path + "/payload_%07d" % (self.i)
+        atomic_write(filename, payload)
+        self.i += 1
 
         self.stage_info_execs += 1
         if label and label != self.stage_info["method"]:

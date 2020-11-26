@@ -154,6 +154,7 @@ class SlaveProcess:
 
     def quick_validate(self, data, old_res, quiet=False):
         # Validate in persistent mode. Faster but problematic for very funky targets
+        return True
         self.statistics.event_exec()
         old_array = old_res.copy_to_array()
 
@@ -307,6 +308,14 @@ class SlaveProcess:
 
         # restart Qemu on crash
         if crash or timeout:
+            if crash :
+                debug("\033[1;31m[Crash]\033[0m Save inputs...")
+                self.logic.save_crash = True
+
+            else:
+                debug("\033[1;31m[Timeout]\033[0m Delete inputs/ because Timeout detected!")
+                self.logic.inputs_reset = True
+
             self.statistics.event_reload()
             self.q.restart()
 
