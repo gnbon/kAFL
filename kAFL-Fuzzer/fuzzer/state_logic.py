@@ -334,29 +334,33 @@ class FuzzingStateLogic:
         file_path = "/home/oncodetest1/kAFL/out/inputs"
         
         if self.save_crash == True:
-            print("OK, lets make crash directory")
+            # print("OK, lets make crash directory")
             
             os.makedirs("/home/oncodetest1/kAFL/out/crash_input/crash_inputs_%d" %(self.crash_num))
-            print("Please wait.. preparing for saving crash...")
+            # print("Please wait.. preparing for saving crash...")
             time.sleep(5)
             file_dst_path = "/home/oncodetest1/kAFL/out/crash_input/crash_inputs_%d" %(self.crash_num)
             file_list = os.listdir(file_path)
             mov_files=[]
 
-            print("Lets saving crash!!!")
+            # print("Lets saving crash!!!")
 
             for files in file_list:
                 mov_files.append(files)
             for movfi in mov_files:
                 shutil.move(file_path+'/'+movfi, file_dst_path+'/'+movfi)
-                print("move file : "+ files)
+                # print("move file : "+ files)
                 
             self.crash_num += 1
             self.save_crash = False
 
-            print("Crash_num", self.crash_num)
+            # print("Crash_num", self.crash_num)
         
         if self.inputs_reset == True:
+            # if os.path.exists("/home/oncodetest1/kAFL/out/debug.log"):
+            #     os.remove("/home/oncodetest1/kAFL/out/debug.log".path)
+            #     # debugfile = open("/home/oncodetest1/kAFL/out/debug.log", 'w')
+
             if os.path.exists(file_path):
                 for file in os.scandir(file_path):
                     os.remove(file.path)
